@@ -1,6 +1,7 @@
-// Author: Eric Knapik
-// Copyright Eric Knapik 2015
+Author: Eric Knapik
 
+#define BUMP_FACTOR .05
+#define TEX_SCALE_FACTOR .5
 
 
 // If I can figure out the trochoid waves that would make this nicer
@@ -29,13 +30,28 @@ float fbm(vec2 p) {
     return total;
 }
 
+
+vec4 tex3D( in vec3 pos, in vec3 normal, sampler2D sampler )
+{
+    return  texture2D( sampler, pos.yz )*abs(normal.x)+ 
+            texture2D( sampler, pos.xz )*abs(normal.y)+ 
+            texture2D( sampler, pos.xy )*abs(normal.z);
+}
+
 //----------DISTNACE FUNCTIONS----------
 float distSphere(vec3 pos, float r) {
     return length(pos)-r;
 }
 
-float distPlane(vec3 pos) {
-    return pos.y + fbm(pos.xz + .5*fbm(pos.xz + fbm(pos.xz))) + wave(pos, .3, .13, .23, 1.0) + wave(pos, .15, .12, -.35, .5);
+float distOcean(vec3 pos) {
+    return pos.y + fbm(pos.xz + .5*fbm(pos.xz + fbm(pos.xz))) + wave(pos, .3, .0413, .23, 2.0) + wave(pos, .15, .12, -.35, .5);
+}
+
+float distMoon(vec3 pos) {
+    float radius = 0.5;
+    vec3 desiredPos = vec3(-1.0, 2.0, -3.0);
+    float bump = tex3D(pos*TEX_SCALE_FACTOR, normalize(pos-desiredPos), iChannel1).r*BUMP_FACTOR;
+    return length(pos-desiredPos)-radius+bump;
 }
 //---------END DISTANCE FUNCTIONS--------
 
@@ -51,10 +67,10 @@ vec2 shapeMin(vec2 shape1, vec2 shape2) {
 vec2 map(vec3 pos) {
     vec2 shape; // the distance to this shape and the shape id
                 // distance to shape is x, shape id is y
-    shape = shapeMin(vec2(distPlane(pos), 1.0), 
+    shape = shapeMin(vec2(distOcean(pos), 1.0), 
                      vec2(distSphere(pos-vec3(0.0, 0.0005, 0.0), 0.5), 2.0));
     shape = shapeMin(shape,
-                     vec2(distSphere(pos-vec3(0.0, 2.0, -2.0), 1.0), 3.0));
+                     vec2(distMoon(pos), 3.0));
     return shape;
 }
 
@@ -125,18 +141,18 @@ vec3 render(vec3 rayOrigin, vec3 rayDir) {
     vec3  ligPos = vec3(0.0, 2.0, -2.0);
     vec3 lig = normalize(ligPos-pos);
     
-    if(result.y > 0.5 && result.y < 1.5) {
+    if(result.y > 0.5 && result.y < 1.5) { //water
         // tiled floor
         //float f = mod(floor(5.0*pos.x) + floor(5.0*pos.z), 2.0);
         //col = .6 + 0.05*f*vec3(1.0);
-        col = vec3(0.2,0.25,0.4);
+        col = vec3(0.20,0.35,0.55);
         float fo=pow(0.023*result.x, 1.1);
             col=mix(col,vec3(0.91,0.88,0.98),fo);
         if(rayDir.x>0.0) col+= vec3(1.0) *pow( abs(dot(rayDir,lig)), 32.0 )*0.5;
-    } else if(result.y > 1.5 && result.y < 2.5) {
+    } else if(result.y > 1.5 && result.y < 2.5) { //sphere in water
         col = vec3(0.8);
-    } else if(result.y > 2.5 && result.y < 3.5) {
-        col = vec3(0.8, 0.6, 0.1);
+    } else if(result.y > 2.5 && result.y < 3.5) { //moon
+        col = vec3(0.9);
     } else {
         return col = vec3(0.2, 0.4, 0.75);
     }
