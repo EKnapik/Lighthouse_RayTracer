@@ -1,8 +1,15 @@
-Author: Eric Knapik
+// Author: Eric M. Knapik
 
-#define BUMP_FACTOR .05
-#define TEX_SCALE_FACTOR .5
 
+
+struct SpotLight {
+    vec3 pos;
+    vec3 dir;
+    vec3 color;
+    float intensity;
+    float spread;
+    float penFactor;
+};
 
 // If I can figure out the trochoid waves that would make this nicer
 float wave(vec3 p, float speed, float amp, float angle, float freq) {
@@ -10,11 +17,10 @@ float wave(vec3 p, float speed, float amp, float angle, float freq) {
 }
 
 float fbm(vec2 p) {
-    
     float ql = length( p );
     p.x += 0.05*sin(.81*iGlobalTime+ql*2.0);
     p.y += 0.05*sin(1.53*iGlobalTime+ql*6.0);
-    // My TEST
+    
     float total = 0.0;
     float freq = 0.0152250;
     float lacunarity = 2.51;
@@ -31,13 +37,6 @@ float fbm(vec2 p) {
 }
 
 
-vec4 tex3D( in vec3 pos, in vec3 normal, sampler2D sampler )
-{
-    return  texture2D( sampler, pos.yz )*abs(normal.x)+ 
-            texture2D( sampler, pos.xz )*abs(normal.y)+ 
-            texture2D( sampler, pos.xy )*abs(normal.z);
-}
-
 //----------DISTNACE FUNCTIONS----------
 float distSphere(vec3 pos, float r) {
     return length(pos)-r;
@@ -48,12 +47,12 @@ float distOcean(vec3 pos) {
 }
 
 float distMoon(vec3 pos) {
-    float radius = 0.5;
-    vec3 desiredPos = vec3(-1.0, 2.0, -3.0);
-    float bump = tex3D(pos*TEX_SCALE_FACTOR, normalize(pos-desiredPos), iChannel1).r*BUMP_FACTOR;
-    return length(pos-desiredPos)-radius+bump;
+    float radius = 2.0;
+    vec3 desiredPos = vec3(-30.0,5.0,-30.0);
+    return length(pos-desiredPos)-radius;
 }
 //---------END DISTANCE FUNCTIONS--------
+
 
 //-----------OBJECT OPERATIONS-----------
 // need to write my own min function
@@ -67,22 +66,21 @@ vec2 shapeMin(vec2 shape1, vec2 shape2) {
 vec2 map(vec3 pos) {
     vec2 shape; // the distance to this shape and the shape id
                 // distance to shape is x, shape id is y
-    shape = shapeMin(vec2(distOcean(pos), 1.0), 
-                     vec2(distSphere(pos-vec3(0.0, 0.0005, 0.0), 0.5), 2.0));
-    shape = shapeMin(shape,
-                     vec2(distMoon(pos), 3.0));
+    shape = shapeMin(vec2(distOcean(pos), 1.0), vec2(distSphere(pos-vec3(0.0, 0.0, 0.0), 0.5), 2.0));
+    shape = shapeMin(shape,                     vec2(distMoon(pos), 3.0));
     return shape;
 }
 
 vec2 rayMarch(in vec3 rayOrigin, in vec3 rayDir) {
     float tmin = 0.0;
-    float tmax = 20.0;
+    float tmax = 60.0;
     
     float t = tmin;
     float precis = 0.002;
     float material = -1.0;
     
-    for(int i = 0; i < 50; i++) {
+    // for more accuracy increase the amount of checks in the for loop
+    for(int i = 0; i < 60; i++) {
         vec2 shapeObj = map(rayOrigin + t*rayDir);
         float dist = shapeObj.x;
         if(dist < precis || t > tmax) {
@@ -127,64 +125,56 @@ vec3 calcNormal(vec3 pos) {
 }
 
 
-
 // --- COMBINE EVERYTHING TO GET PIXEL COLOR
-vec3 render(vec3 rayOrigin, vec3 rayDir) {
-    vec3 col;
+vec3 calColor(vec3 rayOrigin, vec3 rayDir) {
+    vec3 matCol; // material color
     // finds the t of intersect and what is it intersected with
     vec2 result = rayMarch(rayOrigin, rayDir);
     float t = result.x;
     
     vec3 pos = rayOrigin + t*rayDir;
     vec3 nor = calcNormal( pos );
-    vec3 ref = reflect( -rayDir, nor );
-    vec3  ligPos = vec3(0.0, 2.0, -2.0);
+    vec3 reflectEye = normalize(reflect(normalize(-rayDir), nor)); // rayDir is the eye to position
+    float specCoeff, diffCoeff, ambCoeff = 0.0;                    // dependant on material
+    float shadow, spotCos, spotCoeff = 0.0;                        // how much in the light
+    
+    // DEFINE two spot lights'Moon' and one simulates the moonlight
+    vec3  ligPos = vec3(-20.0,5.0,-20.0);
+    // some interesting toon style shading if the light vector isnt normalized
     vec3 lig = normalize(ligPos-pos);
     
+    // set the material coefficients
     if(result.y > 0.5 && result.y < 1.5) { //water
-        // tiled floor
-        //float f = mod(floor(5.0*pos.x) + floor(5.0*pos.z), 2.0);
-        //col = .6 + 0.05*f*vec3(1.0);
-        col = vec3(0.20,0.35,0.55);
+        matCol = vec3(0.20,0.35,0.55);
         float fo=pow(0.023*result.x, 1.1);
-            col=mix(col,vec3(0.91,0.88,0.98),fo);
-        if(rayDir.x>0.0) col+= vec3(1.0) *pow( abs(dot(rayDir,lig)), 32.0 )*0.5;
+            matCol=mix(matCol,vec3(0.91,0.88,0.98),fo);
     } else if(result.y > 1.5 && result.y < 2.5) { //sphere in water
-        col = vec3(0.8);
+        matCol = vec3(0.8);
     } else if(result.y > 2.5 && result.y < 3.5) { //moon
-        col = vec3(0.9);
+        matCol = vec3(0.5);
     } else {
-        return col = vec3(0.2, 0.4, 0.75);
+        return matCol = vec3(0.2, 0.4, 0.75);
     }
+    specCoeff = 1.20;
+    diffCoeff = 1.20;
+    ambCoeff = 0.10;
     
-    
-        float amb = clamp( 0.5+0.5*nor.y, 0.0, 1.0 );
-        float dif = clamp( dot( nor, lig ), 0.0, 1.0 );
-        float bac = clamp( dot( nor, normalize(vec3(-lig.x,0.0,-lig.z))), 0.0, 1.0 )*clamp( 1.0-pos.y,0.0,1.0);
-        float dom = smoothstep( -0.1, 0.1, ref.y );
-        float fre = pow( clamp(1.0+dot(nor,rayDir),0.0,1.0), 2.0 );
-        float spe = pow(clamp( dot( ref, lig ), 0.0, 1.0 ),16.0);
+    // calculate light addition per spotlight
+    // Bidirectional reflectance distribution function
+    float dif = clamp( dot( nor, lig ), 0.0, 1.0 );
+    float spe = pow(clamp( dot( reflectEye, lig ), 0.0, 1.0 ),16.0);
         
-        dif *= softshadow( pos, lig, 0.025, 2.5 );
-        dom *= softshadow( pos, ref, 0.025, 2.5 );
+    dif *= softshadow( pos, lig, 0.025, 2.5 );
 
-        vec3 brdf = vec3(0.0);
-        brdf += 1.20*dif*vec3(1.00,0.90,0.60);
-        brdf += 1.20*spe*vec3(1.00,0.90,0.60)*dif;
-        brdf += 0.30*amb*vec3(0.50,0.70,1.00);
-        brdf += 0.40*dom*vec3(0.50,0.70,1.00);
-        //brdf += 0.30*bac*vec3(0.25,0.25,0.25);
-        //brdf += 0.40*fre*vec3(1.00,1.00,1.00);
-        brdf += 0.02;
-        col = col*brdf;
+    vec3 brdf = vec3(0.0);
+    brdf += diffCoeff*dif*vec3(1.00,1.0,1.0);
+    brdf += specCoeff*spe*vec3(1.00,0.90,0.60)*dif;
+    brdf += ambCoeff*vec3(0.50,0.70,1.00);
 
-        //col = mix( col, vec3(0.8,0.9,1.0), 1.0-exp( -0.0005*t*t ) );
+    brdf += 0.02;
+    matCol = matCol*brdf;
     
-    
-    
-    
-    
-    return vec3(clamp(col, 0.0, 1.0));  
+    return vec3(clamp(matCol, 0.0, 1.0));  
 }
 
 
@@ -207,23 +197,18 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
     p.x *= iResolution.x / iResolution.y;
     
     // camera or eye (where rays start)
-    vec3 rayOrigin = vec3(3.0, 1.0, 0.0);
-    vec3 lookAtPoint = vec3(0.0, 1.0, 0.0);
-    float focalLen = 1.5; // how far camera is from image plane
+    vec3 rayOrigin = vec3(0.0, 1.5, 4.0);
+    vec3 lookAtPoint = vec3(-1.0, 1.5, 0.0);
+    float focalLen = 1.0; // how far camera is from image plane
     mat3 camMat = mkCamMat(rayOrigin, lookAtPoint, 0.0);
 
     // ray direction into image plane
     vec3 rayDir = camMat * normalize(vec3(p.xy, focalLen));
     
     //render the scene with ray marching
-    vec3 col = render(rayOrigin, rayDir);
+    vec3 col = calColor(rayOrigin, rayDir);
 
     fragColor = vec4(col, 1.0); 
     //fragColor = vec4(.9); // that off white
 }
-
-
-
-
-
 
