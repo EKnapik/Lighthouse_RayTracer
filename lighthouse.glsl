@@ -2,7 +2,7 @@
 
 // Illuminates the moon
 #define MoonSpotPos vec3(3.0, 8.0, -2.0)
-#define MoonSpotDir normalize(MoonSpotPos-vec3(-20.0,15.0,-20.0))
+#define MoonSpotDir normalize(MoonSpotPos-vec3(-15.0,15.0,-20.0))
 #define MoonSpotCol vec3(1.0, 1.0, 1.0)
 // Illuminates the rest of the scene
 #define LightPos vec3(-10.0, 3.0, -16.0)
@@ -72,7 +72,7 @@ float distOcean(vec3 pos) {
 
 float distMoon(vec3 pos) {
     float radius = 6.0;
-    vec3 desiredPos = vec3(-20.0,15.0,-20.0);
+    vec3 desiredPos = vec3(-15.0,15.0,-20.0);
     return length(pos-desiredPos)-radius;
 }
 //---------END DISTANCE FUNCTIONS--------
