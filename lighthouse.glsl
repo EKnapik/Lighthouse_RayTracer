@@ -43,6 +43,23 @@ float fbm(vec2 p) {
     return total;
 }
 
+float fbm3(vec3 p) {
+    float ql = length( p );
+    
+    float total = 0.0;
+    float freq = .02250;
+    float lacunarity = 0.151;
+    float gain = 0.15;
+    float amp = gain;
+    
+    for(int i = 0; i < 5; i++) {
+        total += texture2D(iChannel1, p.xy*freq).r*amp;
+        freq *= lacunarity;
+        amp *= gain;
+    }
+    
+    return total;
+}
 
 //----------DISTNACE FUNCTIONS----------
 float distSphere(vec3 pos, float r) {
@@ -159,9 +176,10 @@ vec3 calColor(vec3 rayOrigin, vec3 rayDir) {
     } else if(result.y > 1.5 && result.y < 2.5) { //sphere in water
         matCol = vec3(0.8);
     } else if(result.y > 2.5 && result.y < 3.5) { //moon
-        matCol = vec3(0.6);
+        matCol = vec3(5.0*fbm3(pos));
+        //matCol = vec3(0.6);
     } else {
-        return matCol = vec3(0.1, 0.2, 0.45);
+        return matCol = vec3(0.0, 0.2, 0.45);
     }
     
     // calculate light addition per spotlight
