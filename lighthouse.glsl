@@ -1,7 +1,7 @@
 // Author: Eric M. Knapik
 
 // Illuminates the moon
-#define MoonSpotPos vec3(3.0, 8.0, -2.0)
+#define MoonSpotPos vec3(20.0, -10.0, -10.0)
 #define MoonSpotDir normalize(MoonSpotPos-vec3(-15.0,15.0,-20.0))
 #define MoonSpotCol vec3(1.0, 1.0, 1.0)
 // Illuminates the rest of the scene
@@ -61,7 +61,51 @@ float fbm3(vec3 p) {
     return total;
 }
 
+
+//-----------OBJECT OPERATIONS-----------
+// need to write my own min function
+vec2 shapeMin(vec2 shape1, vec2 shape2) {
+    return (shape1.x < shape2.x) ? shape1 : shape2;
+}
+float length2( vec2 p )
+{
+    return sqrt( p.x*p.x + p.y*p.y );
+}
+
+float length8( vec2 p )
+{
+    p = p*p; p = p*p; p = p*p;
+    return pow( p.x + p.y, 1.0/8.0 );
+}
+//----------END OBJECT OPERATIONS----------
+
 //----------DISTNACE FUNCTIONS----------
+float sdBox( vec3 p, vec3 b )
+{
+  vec3 d = abs(p) - b;
+  return min(max(d.x,max(d.y,d.z)),0.0) + length(max(d,0.0));
+}
+
+float sdCylinder( vec3 p, vec2 h )
+{
+  vec2 d = abs(vec2(length(p.xz),p.y)) - h;
+  return min(max(d.x,d.y),0.0) + length(max(d,0.0));
+}
+
+float sdCone( in vec3 p, in vec3 c )
+{
+    vec2 q = vec2( length(p.xz), p.y );
+    float d1 = -p.y-c.z;
+    float d2 = max( dot(q,c.xy), p.y);
+    return length(max(vec2(d1,d2),0.0)) + min(max(d1,d2), 0.);
+}
+
+float sdTorus82( vec3 p, vec2 t )
+{
+  vec2 q = vec2(length2(p.xz)-t.x,p.y);
+  return length8(q)-t.y;
+}
+
 float distSphere(vec3 pos, float r) {
     return length(pos)-r;
 }
@@ -75,15 +119,29 @@ float distMoon(vec3 pos) {
     vec3 desiredPos = vec3(-15.0,15.0,-20.0);
     return length(pos-desiredPos)-radius;
 }
-//---------END DISTANCE FUNCTIONS--------
 
-
-//-----------OBJECT OPERATIONS-----------
-// need to write my own min function
-vec2 shapeMin(vec2 shape1, vec2 shape2) {
-    return (shape1.x < shape2.x) ? shape1 : shape2;
+vec2 distLightHouse(vec2 curShape, vec3 pos) {
+    vec2 res;
+    res = shapeMin( curShape, vec2( sdCylinder(pos, vec2(0.4, 1.5)), 4.0)); // mainTube
+    // saftey bars
+    res = shapeMin( res, vec2( sdCylinder(pos-vec3(0.4, 1.5, 0.0), vec2(0.03, 0.2)), 5.0));
+    res = shapeMin( res, vec2( sdCylinder(pos-vec3(0.0, 1.5, 0.4), vec2(0.03, 0.2)), 5.0));
+    res = shapeMin( res, vec2( sdCylinder(pos-vec3(-0.4, 1.5, 0.0), vec2(0.03, 0.2)), 5.0));
+    res = shapeMin( res, vec2( sdCylinder(pos-vec3(0.0, 1.5, -0.4), vec2(0.03, 0.2)), 5.0));
+    res = shapeMin( res, vec2( sdCylinder(pos-vec3(0.28, 1.5, -0.28), vec2(0.03, 0.2)), 5.0));
+    res = shapeMin( res, vec2( sdCylinder(pos-vec3(-0.28, 1.5, -0.28), vec2(0.03, 0.2)), 5.0));
+    res = shapeMin( res, vec2( sdCylinder(pos-vec3(-0.28, 1.5, 0.28), vec2(0.03, 0.2)), 5.0));
+    res = shapeMin( res, vec2( sdCylinder(pos-vec3(0.28, 1.5, 0.28), vec2(0.03, 0.2)), 5.0));
+    res = shapeMin( res, vec2( sdTorus82(pos-vec3(0.0, 1.64, 0.0), vec2(0.4, 0.05)), 5.0));
+    res = shapeMin( res, vec2( sdTorus82(pos-vec3(0.0, 1.3, 0.0), vec2(0.4, 0.05)), 5.0));
+    // window
+    res = shapeMin( res, vec2( sdBox(pos-vec3(-0.2, 0.5, 0.0), vec3(0.2, 0.3, 0.2)), 5.0));
+    // lighthouse cap
+    res = shapeMin( res, vec2( sdCone(pos-vec3(0.0, 2.5, 0.0), vec3(0.4, 0.35, 0.5)), 5.0));
+    res = shapeMin( res, vec2( distSphere(pos-vec3(0.0, 2.5, 0.0), 0.07), 5.0));
+    return res;
 }
-//----------END OBJECT OPERATIONS----------
+//---------END DISTANCE FUNCTIONS--------
 
 
 //-----------OBJ MAP AND RAYMARCH-------------
@@ -92,6 +150,7 @@ vec2 map(vec3 pos) {
                 // distance to shape is x, shape id is y
     shape = shapeMin(vec2(distOcean(pos), 1.0), vec2(distSphere(pos, 0.5), 2.0));
     shape = shapeMin(shape,                     vec2(distMoon(pos), 3.0));
+    shape = distLightHouse(shape, pos-vec3(3.0, 1.4, -3.0));
     return shape;
 }
 
@@ -173,13 +232,17 @@ vec3 calColor(vec3 rayOrigin, vec3 rayDir) {
         matCol = vec3(0.20,0.35,0.55);
         float fo=pow(0.023*result.x, 1.1);
             matCol=mix(matCol,vec3(0.91,0.88,0.98),fo);
-    } else if(result.y > 1.5 && result.y < 2.5) { //sphere in water
+    } else if(result.y > 1.5 && result.y < 2.5) { // sphere in water
         matCol = vec3(0.8);
-    } else if(result.y > 2.5 && result.y < 3.5) { //moon
+    } else if(result.y > 2.5 && result.y < 3.5) { // moon
         matCol = vec3(5.0*fbm3(pos));
         //matCol = vec3(0.6);
-    } else {
-        return matCol = vec3(0.0, 0.2, 0.45);
+    } else if(result.y > 3.5 && result.y < 4.5) { // main lighthouse body
+        matCol = vec3(1.0, 0.0, 0.0);
+    } else if(result.y > 4.5 && result.y < 5.5) { // lighthouse other parts
+        matCol = vec3(0.7);
+    } else {                                      // background
+        return matCol = 0.3*vec3(0.0, 0.2, 0.45);
     }
     
     // calculate light addition per spotlight
