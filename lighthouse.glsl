@@ -1,6 +1,13 @@
 // Author: Eric M. Knapik
 
-
+// Illuminates the moon
+#define MoonSpotPos vec3(3.0, 8.0, -2.0)
+#define MoonSpotDir normalize(MoonSpotPos-vec3(-20.0,15.0,-20.0))
+#define MoonSpotCol vec3(1.0, 1.0, 1.0)
+// Illuminates the rest of the scene
+#define LightPos vec3(-10.0, 3.0, -16.0)
+#define LightDir normalize(LightPos-vec3(-3.0, 3.0, 0.0))
+#define LightCol vec3(1.0, 1.0, 1.0)
 
 struct SpotLight {
     vec3 pos;
@@ -47,8 +54,8 @@ float distOcean(vec3 pos) {
 }
 
 float distMoon(vec3 pos) {
-    float radius = 2.0;
-    vec3 desiredPos = vec3(-30.0,5.0,-30.0);
+    float radius = 6.0;
+    vec3 desiredPos = vec3(-20.0,15.0,-20.0);
     return length(pos-desiredPos)-radius;
 }
 //---------END DISTANCE FUNCTIONS--------
@@ -66,7 +73,7 @@ vec2 shapeMin(vec2 shape1, vec2 shape2) {
 vec2 map(vec3 pos) {
     vec2 shape; // the distance to this shape and the shape id
                 // distance to shape is x, shape id is y
-    shape = shapeMin(vec2(distOcean(pos), 1.0), vec2(distSphere(pos-vec3(0.0, 0.0, 0.0), 0.5), 2.0));
+    shape = shapeMin(vec2(distOcean(pos), 1.0), vec2(distSphere(pos, 0.5), 2.0));
     shape = shapeMin(shape,                     vec2(distMoon(pos), 3.0));
     return shape;
 }
@@ -76,7 +83,7 @@ vec2 rayMarch(in vec3 rayOrigin, in vec3 rayDir) {
     float tmax = 60.0;
     
     float t = tmin;
-    float precis = 0.002;
+    float precis = 0.0002;
     float material = -1.0;
     
     // for more accuracy increase the amount of checks in the for loop
@@ -103,7 +110,7 @@ float softshadow(vec3 rayOrigin, vec3 rayDir, float mint, float maxt) {
     float k = 8.0; // how soft the shadow is (a constant)
     float res = 1.0;
     float t = mint;
-    for(int i=0; i<16; i++) {
+    for(int i=0; i<10; i++) {
         float h = map(rayOrigin + t*rayDir).x;
         res = min(res, k*h/t);
         t += h; // can clamp how much t increases by for more precision
@@ -134,14 +141,15 @@ vec3 calColor(vec3 rayOrigin, vec3 rayDir) {
     
     vec3 pos = rayOrigin + t*rayDir;
     vec3 nor = calcNormal( pos );
-    vec3 reflectEye = normalize(reflect(normalize(-rayDir), nor)); // rayDir is the eye to position
-    float specCoeff, diffCoeff, ambCoeff = 0.0;                    // dependant on material
-    float shadow, spotCos, spotCoeff = 0.0;                        // how much in the light
+    vec3 reflectEye = reflect(normalize(-rayDir), nor); // rayDir is the eye to position
+    vec3 posToLight; // define vector that is dependant per light
+    float ambCoeff = 0.1;
+    float shadow, attenuation, spotCos, spotCoeff = 0.0;           // how much in the light
+    float diff, spec;
     
-    // DEFINE two spot lights'Moon' and one simulates the moonlight
-    vec3  ligPos = vec3(-20.0,5.0,-20.0);
-    // some interesting toon style shading if the light vector isnt normalized
-    vec3 lig = normalize(ligPos-pos);
+    // define spotlight illuminating moon and then the moonlight
+    SpotLight moonSpot = SpotLight(MoonSpotPos, MoonSpotDir, MoonSpotCol, 1.0, 0.1, 20.0);
+    SpotLight light = SpotLight(LightPos, LightDir, LightCol, 0.9, 0.4, 20.0);
     
     // set the material coefficients
     if(result.y > 0.5 && result.y < 1.5) { //water
@@ -151,30 +159,40 @@ vec3 calColor(vec3 rayOrigin, vec3 rayDir) {
     } else if(result.y > 1.5 && result.y < 2.5) { //sphere in water
         matCol = vec3(0.8);
     } else if(result.y > 2.5 && result.y < 3.5) { //moon
-        matCol = vec3(0.5);
+        matCol = vec3(0.6);
     } else {
-        return matCol = vec3(0.2, 0.4, 0.75);
+        return matCol = vec3(0.1, 0.2, 0.45);
     }
-    specCoeff = 1.20;
-    diffCoeff = 1.20;
-    ambCoeff = 0.10;
     
     // calculate light addition per spotlight
     // Bidirectional reflectance distribution function
-    float dif = clamp( dot( nor, lig ), 0.0, 1.0 );
-    float spe = pow(clamp( dot( reflectEye, lig ), 0.0, 1.0 ),16.0);
-        
-    dif *= softshadow( pos, lig, 0.025, 2.5 );
-
     vec3 brdf = vec3(0.0);
-    brdf += diffCoeff*dif*vec3(1.00,1.0,1.0);
-    brdf += specCoeff*spe*vec3(1.00,0.90,0.60)*dif;
+    // Add lighting from spot on the moon
+    posToLight = normalize(moonSpot.pos - pos);
+    spotCos = dot(posToLight, moonSpot.dir);
+    spotCoeff = smoothstep( 1.0-moonSpot.spread, 1.0, spotCos );
+    if(spotCos > 1.0-moonSpot.spread) { // within the spotlight
+        diff = spotCoeff*clamp(dot(nor,posToLight), 0.0, 1.0);
+        spec = spotCoeff*pow(clamp(dot(reflectEye,posToLight), 0.0, 1.0), 20.0);
+        shadow = softshadow( pos, posToLight, 0.025, 2.5 );
+        attenuation = 1.0;
+        brdf += light.color*matCol*((diff+spec)*shadow*attenuation);
+    }
+    // Add lighting from spot away from the moon
+    posToLight = normalize(light.pos - pos);
+    spotCos = dot(posToLight, light.dir);
+    spotCoeff = smoothstep( 1.0-light.spread, 1.0, spotCos );
+    if(spotCos > 1.0-light.spread) { // within the spotlight
+        diff = spotCoeff*clamp(dot(nor,posToLight), 0.0, 1.0);
+        spec = spotCoeff*pow(clamp(dot(reflectEye,posToLight), 0.0, 1.0), 20.0);
+        shadow = softshadow( pos, posToLight, 0.025, 2.5 );
+        attenuation = 1.0;
+        brdf += light.color*matCol*((diff+spec)*shadow*attenuation);
+    }
+    // Add Ambient
     brdf += ambCoeff*vec3(0.50,0.70,1.00);
-
-    brdf += 0.02;
-    matCol = matCol*brdf;
     
-    return vec3(clamp(matCol, 0.0, 1.0));  
+    return vec3(clamp(brdf, 0.0, 1.0));  
 }
 
 
