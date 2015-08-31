@@ -77,6 +77,11 @@ float length8( vec2 p )
     p = p*p; p = p*p; p = p*p;
     return pow( p.x + p.y, 1.0/8.0 );
 }
+vec3 opTx( vec3 p, mat4 m )
+{
+    vec4 q = m*vec4(p,1.0);
+    return q.xyz;
+}
 //----------END OBJECT OPERATIONS----------
 
 //----------DISTNACE FUNCTIONS----------
@@ -208,6 +213,44 @@ vec3 calcNormal(vec3 pos) {
 }
 
 
+float getLighthouseLight(vec3 rayOrigin, vec3 rayDir) {
+    float time = 0.3*iGlobalTime;
+    mat4 rot1 = mat4(0.0, 1.0, 0.0, 0.0,
+                      -1.0, 0.0, 0.0, 0.0,
+                      0.0, 0.0, 1.0, 0.0,
+                      0.0, 0.0, 0.0, 1.0);
+    mat4 rot2 = mat4(cos(time), 0.0, -sin(time), 0.0,
+                       0.0, 1.0, 0.0, 0.0,
+                       sin(time), 0.0, cos(time), 0.0,
+                       0.0, 0.0, 0.0, 1.0);
+    mat4 trans = rot1*rot2;
+    float tmin = 0.0;
+    float tmax = 60.0;
+    
+    float t = tmin;
+    float precis = 0.0002;
+    // for more accuracy increase the amount of checks in the for loop
+    for(int i = 0; i < 60; i++) {
+        vec3 pos = rayOrigin + t*rayDir;
+        float dist = sdCone(opTx(pos-vec3(0.9, 2.0, 1.8), trans), vec3(1.5, 0.2, 5.0));
+        if(dist < precis || t > tmax) {
+            break;
+        }
+        t += dist; 
+    }
+    return t;
+}
+
+vec3 applyFog(vec3  rgb, float dist, vec3 rayOri, vec3 rayDir) {
+    float b = 0.005;
+    float c = 0.4;
+    float lighthouseAmount = 1.2/getLighthouseLight(rayOri, rayDir);
+    float fogAmount = c * exp(-rayOri.y*b) * (1.0-exp( -dist*rayDir.y*b ))/rayDir.y;
+    vec3  fogColor  = vec3(0.5,0.6,0.7);
+    vec3  lightCol = vec3(1.0,0.9,0.7);
+    return mix(mix(rgb, fogColor, fogAmount), lightCol, lighthouseAmount);
+}
+
 // --- COMBINE EVERYTHING TO GET PIXEL COLOR
 vec3 calColor(vec3 rayOrigin, vec3 rayDir) {
     vec3 matCol; // material color
@@ -238,7 +281,7 @@ vec3 calColor(vec3 rayOrigin, vec3 rayDir) {
         matCol = vec3(5.0*fbm3(pos));
         //matCol = vec3(0.6);
     } else if(result.y > 3.5 && result.y < 4.5) { // main lighthouse body
-        matCol = vec3(1.0, 0.0, 0.0);
+        matCol = vec3(0.7, 0.0, 0.0);
     } else if(result.y > 4.5 && result.y < 5.5) { // lighthouse other parts
         matCol = vec3(0.7);
     } else {                                      // background
@@ -272,6 +315,11 @@ vec3 calColor(vec3 rayOrigin, vec3 rayDir) {
     }
     // Add Ambient
     brdf += ambCoeff*vec3(0.50,0.70,1.00);
+    
+    // perform post processing effects
+    if (result.y < 2.5 || result.y >3.5) { // don't fog the moon
+        brdf = applyFog(brdf, result.x, rayOrigin, rayDir);
+    }
     
     return vec3(clamp(brdf, 0.0, 1.0));  
 }
