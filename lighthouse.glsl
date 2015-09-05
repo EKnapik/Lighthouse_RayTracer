@@ -1,4 +1,5 @@
 // Author: Eric M. Knapik
+// github: eknapik
 
 // Illuminates the moon
 #define MoonSpotPos vec3(20.0, -10.0, -10.0)
@@ -18,7 +19,7 @@ struct SpotLight {
     float penFactor;
 };
 
-// If I can figure out the trochoid waves that would make this nicer
+// Trochoid waves that would make this nicer
 float wave(vec3 p, float speed, float amp, float angle, float freq) {
     return amp*cos(freq*(freq*(p.x*cos(angle) + p.z*sin(angle)) - speed*iGlobalTime) - speed*iGlobalTime);
 }
@@ -63,7 +64,6 @@ float fbm3(vec3 p) {
 
 
 //-----------OBJECT OPERATIONS-----------
-// need to write my own min function
 vec2 shapeMin(vec2 shape1, vec2 shape2) {
     return (shape1.x < shape2.x) ? shape1 : shape2;
 }
@@ -202,7 +202,7 @@ float softshadow(vec3 rayOrigin, vec3 rayDir, float mint, float maxt) {
     return clamp(res, 0.0, 1.0);
 }
 
-// Inigo Quilez's fast normal adjusted slightly cause I was shading myself
+// Inigo Quilez's fast normal adjusted slightly becuase objects were shading themselves
 vec3 calcNormal(vec3 pos) {
     vec3 epsilon = vec3(0.023, 0.0, 0.0);
     vec3 nor = vec3(
@@ -232,9 +232,12 @@ float getLighthouseLight(vec3 rayOrigin, vec3 rayDir) {
     // for more accuracy increase the amount of checks in the for loop
     for(int i = 0; i < 60; i++) {
         vec3 pos = rayOrigin + t*rayDir;
-        float dist = sdCone(opTx(pos-vec3(0.9, 2.0, 1.8), trans), vec3(1.5, 0.2, 5.0));
-        if(dist < precis || t > tmax) {
+        float dist = sdCone(opTx(pos-vec3(3.0, 3.1, -3.0), trans), vec3(0.3, 0.04, 13.0));
+        if(dist < precis) {
             break;
+        }
+        if(t > tmax) {
+            return 0.0;
         }
         t += dist; 
     }
@@ -242,13 +245,19 @@ float getLighthouseLight(vec3 rayOrigin, vec3 rayDir) {
 }
 
 vec3 applyFog(vec3  rgb, float dist, vec3 rayOri, vec3 rayDir) {
-    float b = 0.005;
-    float c = 0.4;
-    float lighthouseAmount = 1.2/getLighthouseLight(rayOri, rayDir);
+    float b = 0.01;
+    float c = 0.2;
+    float d = 0.1;
+    float lightDist = getLighthouseLight(rayOri, rayDir);
+    float lightAmount = 1.0 - exp( -lightDist*d );
+    lightAmount = 0.6;
     float fogAmount = c * exp(-rayOri.y*b) * (1.0-exp( -dist*rayDir.y*b ))/rayDir.y;
-    vec3  fogColor  = vec3(0.5,0.6,0.7);
+    vec3  fogColor  = vec3(0.5,0.6,0.7)-0.4*vec3(0.45, 0.2, 0.0);
     vec3  lightCol = vec3(1.0,0.9,0.7);
-    return mix(mix(rgb, fogColor, fogAmount), lightCol, lighthouseAmount);
+    if(lightDist > 0.0 && lightDist < 8.0) {
+        return mix(mix(rgb, fogColor, fogAmount), lightCol, lightAmount);
+    }
+    return mix(rgb, fogColor, fogAmount);
 }
 
 // --- COMBINE EVERYTHING TO GET PIXEL COLOR
@@ -270,6 +279,7 @@ vec3 calColor(vec3 rayOrigin, vec3 rayDir) {
     SpotLight moonSpot = SpotLight(MoonSpotPos, MoonSpotDir, MoonSpotCol, 1.0, 0.1, 20.0);
     SpotLight light = SpotLight(LightPos, LightDir, LightCol, 0.9, 0.4, 20.0);
     
+    bool background = false;
     // set the material coefficients
     if(result.y > 0.5 && result.y < 1.5) { //water
         matCol = vec3(0.20,0.35,0.55);
@@ -279,13 +289,13 @@ vec3 calColor(vec3 rayOrigin, vec3 rayDir) {
         matCol = vec3(0.8);
     } else if(result.y > 2.5 && result.y < 3.5) { // moon
         matCol = vec3(5.0*fbm3(pos));
-        //matCol = vec3(0.6);
     } else if(result.y > 3.5 && result.y < 4.5) { // main lighthouse body
+        // could do some parametric barbershop coloring here
         matCol = vec3(0.7, 0.0, 0.0);
     } else if(result.y > 4.5 && result.y < 5.5) { // lighthouse other parts
         matCol = vec3(0.7);
     } else {                                      // background
-        return matCol = 0.3*vec3(0.0, 0.2, 0.45);
+        background = true;
     }
     
     // calculate light addition per spotlight
@@ -316,10 +326,13 @@ vec3 calColor(vec3 rayOrigin, vec3 rayDir) {
     // Add Ambient
     brdf += ambCoeff*vec3(0.50,0.70,1.00);
     
-    // perform post processing effects
-    if (result.y < 2.5 || result.y >3.5) { // don't fog the moon
-        brdf = applyFog(brdf, result.x, rayOrigin, rayDir);
+    // set the brackground
+    if(background) {
+        brdf = 0.2*vec3(0.0, 0.2, 0.45);
+        result.x = 20.0;
     }
+    // perform post processing effects
+    brdf = applyFog(brdf, result.x, rayOrigin, rayDir);
     
     return vec3(clamp(brdf, 0.0, 1.0));  
 }
