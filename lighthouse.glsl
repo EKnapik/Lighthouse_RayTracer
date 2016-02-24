@@ -1,5 +1,6 @@
 // Author: Eric M. Knapik
 // github: eknapik
+// https://github.com/EKnapik
 
 // Illuminates the moon
 #define MoonSpotPos vec3(20.0, -10.0, -10.0)
@@ -269,7 +270,7 @@ vec3 calColor(vec3 rayOrigin, vec3 rayDir) {
     
     vec3 pos = rayOrigin + t*rayDir;
     vec3 nor = calcNormal( pos );
-    vec3 reflectEye = reflect(normalize(-rayDir), nor); // rayDir is the eye to position
+    vec3 reflectEye = reflect(normalize(rayDir), nor); // rayDir is the eye to position
     vec3 posToLight; // define vector that is dependant per light
     float ambCoeff = 0.1;
     float shadow, attenuation, spotCos, spotCoeff = 0.0;           // how much in the light
@@ -288,6 +289,7 @@ vec3 calColor(vec3 rayOrigin, vec3 rayDir) {
     } else if(result.y > 1.5 && result.y < 2.5) { // sphere in water
         matCol = vec3(0.8);
     } else if(result.y > 2.5 && result.y < 3.5) { // moon
+        reflectEye = reflect(normalize(-rayDir), nor);
         matCol = vec3(5.0*fbm3(pos));
     } else if(result.y > 3.5 && result.y < 4.5) { // main lighthouse body
         // could do some parametric barbershop coloring here
